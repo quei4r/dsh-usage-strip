@@ -1,0 +1,49 @@
+{
+  "name": "dsh-usage-strip",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ambient usage strip under the composer: OpenCode Go and Kimi Code plan limits side by side.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "author": "quei4r",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quei4r/dsh-usage-strip.git"
+  },
+  "homepage": "https://github.com/quei4r/dsh-usage-strip#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "opencode",
+    "kimi-code",
+    "usage"
+  ]
+}
