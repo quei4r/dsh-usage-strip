@@ -35,6 +35,11 @@ const KIMI_TOKEN_URL = 'https://auth.kimi.com/api/oauth/token'
 const KIMI_CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098'
 
 const OPENCODE_KEY_REF = 'OPENCODE_GO_API_KEY'
+/** Every OpenCode Go subscription is one route id with its own credential. */
+const GO_SOURCES = [
+  { id: 'opencode-go', keyRef: 'OPENCODE_GO_API_KEY' },
+  { id: 'opencode-go-2', keyRef: 'OPENCODE_GO_API_KEY_2' },
+]
 const KIMI_KEY_REF = 'KIMI_CODE_API_KEY'
 /** Sign-in record shared with dsh-llm-pi-ai's `kimi-coding` route. */
 const KIMI_RECORD_KEY = 'llm-pi-ai/kimi-coding'
@@ -112,14 +117,14 @@ function opencodeWindows(body) {
   return windows
 }
 
-async function readOpencode(ctx) {
-  const key = await resolveKey(ctx, OPENCODE_KEY_REF)
-  if (key === undefined) return { id: 'opencode', configured: false, ok: false, error: 'no-key' }
+async function readOpencode(ctx, source) {
+  const key = await resolveKey(ctx, source.keyRef)
+  if (key === undefined) return { id: source.id, configured: false, ok: false, error: 'no-key' }
   try {
     const body = await getJson(OPENCODE_USAGE_URL, { authorization: `Bearer ${key}` })
-    return { id: 'opencode', configured: true, ok: true, windows: opencodeWindows(body) }
+    return { id: source.id, configured: true, ok: true, windows: opencodeWindows(body) }
   } catch (error) {
-    return { id: 'opencode', configured: true, ok: false, error: messageOf(error) }
+    return { id: source.id, configured: true, ok: false, error: messageOf(error) }
   }
 }
 
@@ -382,24 +387,52 @@ async function readKimi(ctx) {
   try {
     const auth = await kimiBearer(ctx)
     const body = await getJson(KIMI_USAGE_URL, { authorization: auth.authorization })
-    return { id: 'kimi', configured: true, ok: true, source: auth.source, windows: kimiWindows(body) }
+    return { id: 'kimi-coding', configured: true, ok: true, source: auth.source, windows: kimiWindows(body) }
   } catch (error) {
     const message = messageOf(error)
     if (message === 'no Kimi Code CLI credential found') {
-      return { id: 'kimi', configured: false, ok: false, error: 'no-key' }
+      return { id: 'kimi-coding', configured: false, ok: false, error: 'no-key' }
     }
-    return { id: 'kimi', configured: true, ok: false, error: message }
+    return { id: 'kimi-coding', configured: true, ok: false, error: message }
   }
 }
 
 // ── Route ──────────────────────────────────────────────────────────────────
 
 async function collect(ctx) {
-  const [opencode, kimi] = await Promise.all([readOpencode(ctx), readKimi(ctx)])
+  const [go, kimi] = await Promise.all([
+    Promise.all(GO_SOURCES.map((source) => readOpencode(ctx, source))),
+    readKimi(ctx),
+  ])
   return {
     updatedAt: Date.now(),
-    providers: [opencode, kimi],
+    providers: [...go, kimi],
   }
+}
+
+/**
+ * The provider behind the session's currently selected model, read from the
+ * projection cache the sidebar already keeps warm. Falls back to the profile's
+ * default model selection.
+ */
+function providerOfSession(ctx, sessionId) {
+  if (typeof sessionId === 'string' && /^session-[0-9a-f-]{36}$/u.test(sessionId)) {
+    try {
+      const file = join(homedir(), '.dsh', 'storages', 'session_projcache', 'sessions', `${sessionId}.json`)
+      const row = JSON.parse(readFileSync(file, 'utf8'))?.record?.rows?.modelSelection?.val
+      const provider = row?.lastUsed?.provider ?? row?.provider
+      if (typeof provider === 'string' && provider.length > 0) return provider
+    } catch {
+      // fall through to the default selection
+    }
+  }
+  try {
+    const selection = ctx.get('agentDefaultModel')?.currentSelection?.()
+    if (typeof selection?.provider === 'string') return selection.provider
+  } catch {
+    // no default-model service in this composition
+  }
+  return undefined
 }
 
 async function snapshot(ctx, force) {
@@ -433,9 +466,10 @@ export function apply(ctx) {
       }
       const url = new URL(request.url ?? '/usage-strip/usage', 'http://localhost')
       const force = url.searchParams.get('force') === '1'
+      const sessionId = url.searchParams.get('session') ?? undefined
       try {
         const value = await snapshot(ctx, force)
-        response.end(JSON.stringify(value))
+        response.end(JSON.stringify({ ...value, sessionProvider: providerOfSession(ctx, sessionId) }))
       } catch (error) {
         response.statusCode = 500
         response.end(JSON.stringify({ ok: false, error: messageOf(error) }))

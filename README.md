@@ -1,30 +1,44 @@
 # dsh-usage-strip
 
-Ambient plan-limit strip for the DeepSeek Harness Web UI: shows **OpenCode Go** and
-**Kimi Code** quota windows side by side in the composer dock, right next to the
-token/cache stats.
+Ambient plan-limit strip for the DeepSeek Harness Web UI: shows the quota windows of
+the provider **the open session is actually using**, right next to the token/cache
+stats in the composer dock.
 
 ```
-GO 5h 8% · 周 3% · 月 47%   │   Kimi 5h 4% · 月 21%
+GO(2) 5h 0% · 周 0% · 月 0%      ← session is on opencode-go-2
+GO 5h 8% · 周 3% · 月 47%        ← session is on opencode-go
+Kimi 5h 4% · 月 21%              ← session is on kimi-coding
 ```
 
 ## What it does
 
 - Registers one slot entry in `conversation.composer.dock` (order `2`), so it sits
   after the shipped `activity` and `usage` cells and before the context meter.
+- **Follows the session.** The page passes its `sessionId`; the Host reads the
+  `modelSelection` row of that session's projection cache (falling back to the
+  profile's default model selection) and renders only the matching provider. A
+  provider with no quota endpoint, such as `deepseek-official`, shows nothing.
+- **Multiple subscriptions.** Every OpenCode Go subscription is one route id with its
+  own credential (`OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_KEY_2`, …); each is fetched
+  independently and labelled by route (`GO`, `GO(2)`). Quotas are never merged.
 - The Host serves one same-origin route, `GET /usage-strip/usage`, that fans out to
-  both providers, caches the snapshot for 60 s, and never exposes a key to the page.
+  every configured source, caches the snapshot for 60 s, and never exposes a key to
+  the page.
 - The page polls every 60 s (paused while hidden), refreshes on window focus, and
   force-refreshes on click. Colors: `<70%` secondary, `70–89%` warn, `≥90%` error.
-- A provider without credentials is omitted; with neither configured the strip
-  renders nothing at all.
 
 ## Providers
 
-| Provider | Endpoint | Credential |
+| Route id | Endpoint | Credential |
 |---|---|---|
-| OpenCode Go | `https://opencode.ai/zen/go/v1/usage` | credential ref `OPENCODE_GO_API_KEY` |
-| Kimi Code | `https://api.kimi.com/coding/v1/usages` | ref `KIMI_CODE_API_KEY`, else the local Kimi CLI credential |
+| `opencode-go`, `opencode-go-2`, … | `https://opencode.ai/zen/go/v1/usage` | ref `OPENCODE_GO_API_KEY` (`_2`, … for further rows) |
+| `kimi-coding` | `https://api.kimi.com/coding/v1/usages` | ref `KIMI_CODE_API_KEY`, else the local Kimi CLI credential |
+
+To add a second OpenCode Go subscription, declare one more `llm-pi-ai` route with its
+own `apiKeyEnv` and add the matching `{ id, keyRef }` pair to `GO_SOURCES` in
+`index.js`. Because a custom route id is not in pi-ai's catalog, that route must
+spell out `api`, `baseURL`, `models`, and an `x-opencode-session` header; the strip
+itself needs no change beyond the source row.
 
 Kimi Code resolution order:
 

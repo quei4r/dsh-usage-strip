@@ -9,8 +9,8 @@ window.__ModuleLoader__.load({
 
     const zh = (typeof navigator !== 'undefined' ? navigator.language : 'en')?.toLowerCase().startsWith('zh') === true
     const LABELS = zh
-      ? { opencode: 'GO', kimi: 'Kimi', '5h': '5h', week: '周', month: '月', day: '日', '1h': '1h', code: '代码', failed: '读取失败', refresh: '点击刷新用量' }
-      : { opencode: 'GO', kimi: 'Kimi', '5h': '5h', week: 'wk', month: 'mo', day: 'd', '1h': '1h', code: 'code', failed: 'unavailable', refresh: 'Click to refresh usage' }
+      ? { 'opencode-go': 'GO', 'opencode-go-2': 'GO(2)', 'kimi-coding': 'Kimi', '5h': '5h', week: '周', month: '月', day: '日', '1h': '1h', code: '代码', failed: '读取失败', refresh: '点击刷新用量' }
+      : { 'opencode-go': 'GO', 'opencode-go-2': 'GO(2)', 'kimi-coding': 'Kimi', '5h': '5h', week: 'wk', month: 'mo', day: 'd', '1h': '1h', code: 'code', failed: 'unavailable', refresh: 'Click to refresh usage' }
 
     function labelOf(key) {
       return LABELS[key] ?? key
@@ -70,13 +70,15 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function UsageStrip() {
+    function UsageStrip(props) {
+      const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : undefined
       const [data, setData] = React.useState(null)
       const [stale, setStale] = React.useState(false)
 
       const load = React.useCallback(async (force) => {
         try {
-          const response = await fetch(`/usage-strip/usage${force ? '?force=1' : ''}`, {
+          const query = `${force ? '?force=1' : ''}${sessionId === undefined ? '' : `${force ? '&' : '?'}session=${encodeURIComponent(sessionId)}`}`
+          const response = await fetch(`/usage-strip/usage${query}`, {
             credentials: 'same-origin',
             cache: 'no-store',
           })
@@ -111,9 +113,11 @@ window.__ModuleLoader__.load({
           document.removeEventListener('visibilitychange', onVisible)
           window.removeEventListener(REFRESH_EVENT, onRefresh)
         }
-      }, [load])
+      }, [load, sessionId])
 
-      const providers = (data?.providers ?? []).filter((provider) => provider && (provider.ok === true || provider.configured === true))
+      const configured = (data?.providers ?? []).filter((provider) => provider && (provider.ok === true || provider.configured === true))
+      const target = typeof data?.sessionProvider === 'string' ? data.sessionProvider : undefined
+      const providers = target === undefined ? configured : configured.filter((provider) => provider.id === target)
       if (providers.length === 0) return null
 
       return h('div', {
